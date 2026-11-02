@@ -111,6 +111,56 @@ def test_iter_recent_tracks_stops_on_short_page_without_total_pages():
     assert len(session.calls) == 1
 
 
+def test_count_scrobbles_reads_total_from_single_request():
+    page = {
+        "recenttracks": {
+            "track": [dated_track(100)],
+            "@attr": {"page": "1", "totalPages": "557", "total": "557"},
+        }
+    }
+    session = FakeSession([FakeResponse(page)])
+    client = LastFmClient("key", "rj", session=session)
+
+    assert client.count_scrobbles(50, 110) == 557
+    assert len(session.calls) == 1
+    call = session.calls[0]
+    assert call["method"] == "user.getRecentTracks"
+    assert (call["from"], call["to"], call["limit"], call["page"]) == (50, 110, 1, 1)
+
+
+def test_count_scrobbles_handles_empty_range():
+    page = {"recenttracks": {"track": [], "@attr": {"total": "0"}}}
+    client = LastFmClient("key", "rj", session=FakeSession([FakeResponse(page)]))
+
+    assert client.count_scrobbles(50, 110) == 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"recenttracks": {"track": [], "@attr": {}}},
+        {"recenttracks": {"track": [], "@attr": {"total": "many"}}},
+        {"recenttracks": {"track": [], "@attr": {"total": "-1"}}},
+        {"recenttracks": None},
+    ],
+)
+def test_count_scrobbles_rejects_missing_total(payload):
+    client = LastFmClient("key", "rj", session=FakeSession([FakeResponse(payload)]))
+
+    with pytest.raises(LastFmError, match="scrobble total"):
+        client.count_scrobbles(50, 110)
+
+
+def test_count_scrobbles_propagates_api_errors():
+    session = FakeSession([FakeResponse({"error": 6, "message": "User not found"})])
+    client = LastFmClient("key", "rj", session=session)
+
+    with pytest.raises(LastFmError) as exc_info:
+        client.count_scrobbles(50, 110)
+
+    assert exc_info.value.code == 6
+
+
 def test_request_retries_on_rate_limit_error():
     session = FakeSession(
         [

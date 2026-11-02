@@ -55,6 +55,25 @@ class LastFmClient:
         name = user.get("name") or self.username
         return {"username": str(name), "playcount": playcount}
 
+    def count_scrobbles(self, from_ts: int, to_ts: int) -> int:
+        """Count scrobbles in [from_ts, to_ts) with a single request.
+
+        Last.fm treats ``from`` as inclusive and ``to`` as exclusive, so month
+        boundaries can be passed unchanged.
+        """
+        payload = self._request(
+            "user.getRecentTracks",
+            user=self.username,
+            limit=1,
+            page=1,
+            **{"from": int(from_ts), "to": int(to_ts)},
+        )
+        attr = _as_dict(_as_dict(payload.get("recenttracks")).get("@attr"))
+        total = _as_int(attr.get("total"))
+        if total is None or total < 0:
+            raise LastFmError("Last.fm response did not include a scrobble total")
+        return total
+
     def iter_recent_tracks(
         self,
         from_ts: int | None = None,
