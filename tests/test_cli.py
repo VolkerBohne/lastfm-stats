@@ -106,7 +106,7 @@ def test_main_outputs_json(monkeypatch, capsys):
     year = cli.current_utc_year()
     counts = {month: month for month in range(1, 13)}
 
-    def fake_collect(username, api_key, requested_year, *, show_progress):
+    def fake_collect(username, api_key, requested_year, *, show_progress, **kwargs):
         assert username == "rj"
         assert api_key == "secret"
         assert requested_year == year
@@ -139,7 +139,7 @@ def test_main_autoloads_dotenv_from_cwd(monkeypatch, tmp_path):
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
     captured = {}
 
-    def fake_collect(username, api_key, requested_year, *, show_progress):
+    def fake_collect(username, api_key, requested_year, *, show_progress, **kwargs):
         captured["username"] = username
         captured["api_key"] = api_key
         counts = {month: 0 for month in range(1, 13)}
@@ -161,7 +161,7 @@ def test_main_explicit_environment_ignores_dotenv(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     captured = {}
 
-    def fake_collect(username, api_key, requested_year, *, show_progress):
+    def fake_collect(username, api_key, requested_year, *, show_progress, **kwargs):
         captured["username"] = username
         captured["api_key"] = api_key
         counts = {month: 0 for month in range(1, 13)}
@@ -191,3 +191,29 @@ def test_main_handles_lastfm_error(monkeypatch, capsys):
 
     assert code == 1
     assert "Invalid API key" in capsys.readouterr().err
+
+
+def test_main_passes_cache_options(monkeypatch, tmp_path):
+    captured = []
+
+    def fake_collect(username, api_key, requested_year, *, show_progress, **kwargs):
+        captured.append(kwargs)
+        counts = {month: 0 for month in range(1, 13)}
+        return {"username": username, "playcount": 1}, counts, 0
+
+    monkeypatch.setattr(cli, "collect_stats", fake_collect)
+    env = {
+        "LASTFM_USERNAME": "rj",
+        "LASTFM_API_KEY": "secret",
+        "LASTFM_STATS_CACHE_DIR": str(tmp_path),
+    }
+
+    assert cli.main(["--json"], env) == 0
+    assert cli.main(["--json", "--refresh"], env) == 0
+    assert cli.main(["--json", "--no-cache"], env) == 0
+
+    assert captured == [
+        {"cache_dir": tmp_path, "refresh": False},
+        {"cache_dir": tmp_path, "refresh": True},
+        {"cache_dir": None, "refresh": False},
+    ]

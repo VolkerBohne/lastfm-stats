@@ -7,9 +7,11 @@ import sys
 from calendar import month_name
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .api import LastFmClient, LastFmError, track_timestamp
+from .cache import MonthCache, default_cache_dir, is_month_final, month_start
 from .env import merge_dotenv
 from .stats import aggregate_by_month, month_names
 
@@ -127,6 +129,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="emit machine-readable JSON instead of a table",
     )
+    cache_group = parser.add_mutually_exclusive_group()
+    cache_group.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore cached monthly counts and fetch them again",
+    )
+    cache_group.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="neither read nor write the monthly count cache",
+    )
     return parser
 
 
@@ -136,11 +149,59 @@ def collect_stats(
     year: int,
     *,
     show_progress: bool,
+    cache_dir: Path | None = None,
+    refresh: bool = False,
 ) -> tuple[dict[str, Any], dict[int, int], int]:
     client = LastFmClient(api_key, username)
     info = client.get_user_info()
-    from_ts, to_ts = year_bounds(year)
+    _, to_ts = year_bounds(year)
 
+    now = datetime.now(timezone.utc)
+    last_month = now.month if year == now.year else 12
+    cache = (
+        MonthCache(cache_dir, info["username"], load=not refresh)
+        if cache_dir is not None
+        else None
+    )
+
+    counts = {month: 0 for month in range(1, 13)}
+    first_missing = None
+    for month in range(1, last_month + 1):
+        cached = cache.get(year, month) if cache is not None else None
+        if cached is None:
+            first_missing = month
+            break
+        counts[month] = cached
+
+    if first_missing is not None:
+        # Only scrobbles from the first uncached month onwards are fetched.
+        from_ts = int(month_start(year, first_missing).timestamp())
+        fetched = _fetch_month_counts(
+            client, year, from_ts, to_ts, show_progress=show_progress
+        )
+        for month in range(first_missing, 13):
+            counts[month] = fetched[month]
+
+    if cache is not None:
+        for month in range(1, last_month + 1):
+            if is_month_final(year, month, now):
+                cache.put(year, month, counts[month])
+        try:
+            cache.save()
+        except OSError as exc:
+            print(f"warning: could not write cache: {exc}", file=sys.stderr)
+
+    return info, counts, sum(counts.values())
+
+
+def _fetch_month_counts(
+    client: LastFmClient,
+    year: int,
+    from_ts: int,
+    to_ts: int,
+    *,
+    show_progress: bool,
+) -> dict[int, int]:
     progress = None
     if show_progress:
 
@@ -162,8 +223,8 @@ def collect_stats(
     if show_progress:
         print(file=sys.stderr)
 
-    counts, year_plays = aggregate_by_month(timestamps, year)
-    return info, counts, year_plays
+    counts, _ = aggregate_by_month(timestamps, year)
+    return counts
 
 
 def main(
@@ -178,7 +239,12 @@ def main(
         username, api_key = load_config(args, env)
         year = args.year or current_utc_year()
         info, counts, year_plays = collect_stats(
-            username, api_key, year, show_progress=not args.json
+            username,
+            api_key,
+            year,
+            show_progress=not args.json,
+            cache_dir=None if args.no_cache else default_cache_dir(env),
+            refresh=args.refresh,
         )
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
