@@ -129,6 +129,55 @@ def test_main_outputs_json(monkeypatch, capsys):
     assert payload["months"]["December"] == 12
 
 
+def test_main_autoloads_dotenv_from_cwd(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text(
+        "LASTFM_USERNAME=rj\nLASTFM_API_KEY=secret\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LASTFM_USERNAME", raising=False)
+    monkeypatch.delenv("LASTFM_API_KEY", raising=False)
+    captured = {}
+
+    def fake_collect(username, api_key, requested_year, *, show_progress):
+        captured["username"] = username
+        captured["api_key"] = api_key
+        counts = {month: 0 for month in range(1, 13)}
+        return {"username": username, "playcount": 1}, counts, 0
+
+    monkeypatch.setattr(cli, "collect_stats", fake_collect)
+
+    code = cli.main(["--json"])
+
+    assert code == 0
+    assert captured == {"username": "rj", "api_key": "secret"}
+
+
+def test_main_explicit_environment_ignores_dotenv(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text(
+        "LASTFM_USERNAME=file\nLASTFM_API_KEY=file\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    captured = {}
+
+    def fake_collect(username, api_key, requested_year, *, show_progress):
+        captured["username"] = username
+        captured["api_key"] = api_key
+        counts = {month: 0 for month in range(1, 13)}
+        return {"username": username, "playcount": 1}, counts, 0
+
+    monkeypatch.setattr(cli, "collect_stats", fake_collect)
+
+    code = cli.main(
+        ["--json"],
+        {"LASTFM_USERNAME": "explicit", "LASTFM_API_KEY": "explicit"},
+    )
+
+    assert code == 0
+    assert captured == {"username": "explicit", "api_key": "explicit"}
+
+
 def test_main_handles_lastfm_error(monkeypatch, capsys):
     def fake_collect(*args, **kwargs):
         raise LastFmError("Last.fm error 10: Invalid API key", code=10)

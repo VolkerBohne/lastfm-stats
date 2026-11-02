@@ -21,8 +21,11 @@ You can use the included `.env.example` as a template:
 ```bash
 cp .env.example .env
 # edit .env
-set -a; . ./.env; set +a
 ```
+
+The app loads `.env` from the current working directory automatically. Variables
+that are already exported take precedence over the file. Values may be quoted,
+for example `LASTFM_API_KEY="your_api_key"`.
 
 ## Install
 
