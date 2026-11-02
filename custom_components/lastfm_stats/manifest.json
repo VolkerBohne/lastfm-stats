@@ -1,0 +1,14 @@
+{
+  "domain": "lastfm_stats",
+  "name": "Last.fm Stats",
+  "codeowners": ["@VolkerBohne"],
+  "config_flow": true,
+  "documentation": "https://github.com/VolkerBohne/lastfm-stats#home-assistant",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/VolkerBohne/lastfm-stats/issues",
+  "requirements": [
+    "lastfm-stats @ https://github.com/VolkerBohne/lastfm-stats/archive/refs/tags/v0.2.0.zip"
+  ],
+  "version": "0.2.0"
+}
