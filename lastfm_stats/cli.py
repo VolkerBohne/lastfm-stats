@@ -10,10 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .api import LastFmClient, LastFmError, track_timestamp
-from .cache import MonthCache, default_cache_dir, is_month_final, month_start
+from .api import LastFmClient, LastFmError
+from .cache import MonthCache, default_cache_dir
 from .env import merge_dotenv
-from .stats import aggregate_by_month, month_names
+from .service import collect_year_stats
+from .stats import month_names
 
 MIN_YEAR = 2002
 
@@ -153,78 +154,36 @@ def collect_stats(
     refresh: bool = False,
 ) -> tuple[dict[str, Any], dict[int, int], int]:
     client = LastFmClient(api_key, username)
-    info = client.get_user_info()
-    _, to_ts = year_bounds(year)
-
-    now = datetime.now(timezone.utc)
-    last_month = now.month if year == now.year else 12
     cache = (
-        MonthCache(cache_dir, info["username"], load=not refresh)
+        MonthCache(cache_dir, username, load=not refresh)
         if cache_dir is not None
         else None
     )
 
-    counts = {month: 0 for month in range(1, 13)}
-    first_missing = None
-    for month in range(1, last_month + 1):
-        cached = cache.get(year, month) if cache is not None else None
-        if cached is None:
-            first_missing = month
-            break
-        counts[month] = cached
-
-    if first_missing is not None:
-        # Only scrobbles from the first uncached month onwards are fetched.
-        from_ts = int(month_start(year, first_missing).timestamp())
-        fetched = _fetch_month_counts(
-            client, year, from_ts, to_ts, show_progress=show_progress
-        )
-        for month in range(first_missing, 13):
-            counts[month] = fetched[month]
-
-    if cache is not None:
-        for month in range(1, last_month + 1):
-            if is_month_final(year, month, now):
-                cache.put(year, month, counts[month])
-        try:
-            cache.save()
-        except OSError as exc:
-            print(f"warning: could not write cache: {exc}", file=sys.stderr)
-
-    return info, counts, sum(counts.values())
-
-
-def _fetch_month_counts(
-    client: LastFmClient,
-    year: int,
-    from_ts: int,
-    to_ts: int,
-    *,
-    show_progress: bool,
-) -> dict[int, int]:
     progress = None
     if show_progress:
 
-        def progress(page: int, total_pages: int | None) -> None:
-            total = total_pages if total_pages is not None else "?"
+        def progress(month: int) -> None:
             print(
-                f"\rFetching scrobbles (page {page}/{total})...",
+                f"\rCounting {month_name[month]:<9}...",
                 end="",
                 file=sys.stderr,
                 flush=True,
             )
 
-    timestamps = []
-    for track in client.iter_recent_tracks(from_ts, to_ts, progress=progress):
-        timestamp = track_timestamp(track)
-        if timestamp is not None:
-            timestamps.append(timestamp)
+    stats = collect_year_stats(client, year, cache=cache, progress=progress)
 
     if show_progress:
         print(file=sys.stderr)
 
-    counts, _ = aggregate_by_month(timestamps, year)
-    return counts
+    if cache is not None:
+        try:
+            cache.save()
+        except OSError as exc:
+            print(f"warning: could not write cache: {exc}", file=sys.stderr)
+
+    info = {"username": stats.username, "playcount": stats.total_plays}
+    return info, stats.months, stats.year_plays
 
 
 def main(
