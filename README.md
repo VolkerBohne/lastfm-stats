@@ -66,6 +66,8 @@ Useful options:
 lastfm-stats --year 2024       # a previous calendar year
 lastfm-stats --user some_user  # override LASTFM_USERNAME
 lastfm-stats --json            # machine-readable output
+lastfm-stats --refresh         # ignore cached months and fetch them again
+lastfm-stats --no-cache        # don't read or write the cache
 python -m lastfm_stats --json  # same without the console script
 ```
 
@@ -92,12 +94,23 @@ JSON output:
   `January 1 00:00 UTC` through the end of the selected year.
 - The now-playing entry is skipped, and timestamps are bucketed into UTC
   calendar months.
+- Monthly counts are cached per user once a month is settled (ended more than
+  14 days ago, since Last.fm accepts scrobbles up to two weeks late). Later
+  runs only fetch scrobbles from the first unsettled month onwards, so a past
+  year costs a single `user.getInfo` request after its first run.
 - Requests are rate-limited, and rate-limit/network/server errors are retried
   with exponential backoff.
 
-Because exact monthly counts require reading the year's scrobbles, very large
-libraries take a while. The app prints fetch progress on stderr unless `--json`
+Because exact monthly counts require reading the year's scrobbles, the first
+run for a year can take a while on very large libraries. The app prints fetch progress on stderr unless `--json`
 is used. Month boundaries follow UTC, as required by the Last.fm API.
+
+## Cache
+
+Cached counts live in `$XDG_CACHE_HOME/lastfm-stats/<username>.json`
+(default `~/.cache/lastfm-stats/`). Set `LASTFM_STATS_CACHE_DIR` to use a
+different directory. Use `--refresh` if you deleted or edited scrobbles in
+an already-cached month, or simply delete the file.
 
 ## Tests
 
