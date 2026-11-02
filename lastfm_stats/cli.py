@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from calendar import month_name
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
+from typing import Any
+
+from .api import LastFmClient, LastFmError, track_timestamp
+from .stats import aggregate_by_month, month_names
+
+MIN_YEAR = 2002
+
+
+class ConfigError(Exception):
+    """Raised when required configuration is missing or invalid."""
+
+
+def current_utc_year() -> int:
+    return datetime.now(timezone.utc).year
+
+
+def load_config(
+    args: argparse.Namespace, environ: Mapping[str, str]
+) -> tuple[str, str]:
+    username = (args.user or environ.get("LASTFM_USERNAME") or "").strip()
+    api_key = (environ.get("LASTFM_API_KEY") or "").strip()
+
+    missing = []
+    if not username:
+        missing.append("LASTFM_USERNAME (or --user)")
+    if not api_key:
+        missing.append("LASTFM_API_KEY")
+
+    if missing:
+        raise ConfigError(
+            "Missing required configuration: " + ", ".join(missing) + ". "
+            "See .env.example for the expected variables."
+        )
+
+    return username, api_key
+
+
+def year_bounds(year: int) -> tuple[int, int]:
+    """Return inclusive-ish UNIX bounds for a UTC calendar year."""
+    current_year = current_utc_year()
+    if year > current_year:
+        raise ValueError(f"year {year} is in the future")
+
+    start = datetime(year, 1, 1, tzinfo=timezone.utc)
+    if year == current_year:
+        end = datetime.now(timezone.utc)
+    else:
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+
+    return int(start.timestamp()), int(end.timestamp())
+
+
+def build_payload(
+    username: str,
+    year: int,
+    total_plays: int,
+    year_plays: int,
+    counts: dict[int, int],
+) -> dict[str, Any]:
+    return {
+        "username": username,
+        "year": year,
+        "total_plays": total_plays,
+        "year_plays": year_plays,
+        "months": month_names(counts),
+    }
+
+
+def render_table(
+    username: str,
+    year: int,
+    total_plays: int,
+    year_plays: int,
+    counts: dict[int, int],
+) -> str:
+    now = datetime.now(timezone.utc)
+    last_month = now.month if year == now.year else 12
+
+    lines = [
+        f"Last.fm stats for {username} ({year})",
+        "",
+        f"All-time scrobbles : {total_plays:>12,}",
+        f"Scrobbles in {year}  : {year_plays:>12,}",
+        "",
+        f"{'Month':<12}{'Plays':>12}",
+        f"{'-' * 12} {'-' * 12}",
+    ]
+    for month in range(1, last_month + 1):
+        lines.append(f"{month_name[month]:<12}{counts[month]:>12,}")
+
+    return "\n".join(lines)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="lastfm-stats",
+        description=(
+            "Show Last.fm listening stats: all-time plays and plays by month "
+            "for a calendar year."
+        ),
+        epilog=(
+            "Environment variables: LASTFM_USERNAME and LASTFM_API_KEY. "
+            "Create an API key at https://www.last.fm/api/account/create"
+        ),
+    )
+    parser.add_argument(
+        "--user",
+        help="Last.fm username (defaults to LASTFM_USERNAME)",
+    )
+    parser.add_argument(
+        "--year",
+        type=_year_arg,
+        help=f"calendar year to break down (default: {current_utc_year()})",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of a table",
+    )
+    return parser
+
+
+def collect_stats(
+    username: str,
+    api_key: str,
+    year: int,
+    *,
+    show_progress: bool,
+) -> tuple[dict[str, Any], dict[int, int], int]:
+    client = LastFmClient(api_key, username)
+    info = client.get_user_info()
+    from_ts, to_ts = year_bounds(year)
+
+    progress = None
+    if show_progress:
+
+        def progress(page: int, total_pages: int | None) -> None:
+            total = total_pages if total_pages is not None else "?"
+            print(
+                f"\rFetching scrobbles (page {page}/{total})...",
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    timestamps = []
+    for track in client.iter_recent_tracks(from_ts, to_ts, progress=progress):
+        timestamp = track_timestamp(track)
+        if timestamp is not None:
+            timestamps.append(timestamp)
+
+    if show_progress:
+        print(file=sys.stderr)
+
+    counts, year_plays = aggregate_by_month(timestamps, year)
+    return info, counts, year_plays
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    env = os.environ if environ is None else environ
+
+    try:
+        username, api_key = load_config(args, env)
+        year = args.year or current_utc_year()
+        info, counts, year_plays = collect_stats(
+            username, api_key, year, show_progress=not args.json
+        )
+    except ConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except LastFmError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+
+    canonical_username = info["username"]
+    payload = build_payload(
+        canonical_username,
+        year,
+        info["playcount"],
+        year_plays,
+        counts,
+    )
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(
+            render_table(
+                canonical_username,
+                year,
+                info["playcount"],
+                year_plays,
+                counts,
+            )
+        )
+
+    return 0
+
+
+def _year_arg(value: str) -> int:
+    try:
+        year = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("year must be an integer") from exc
+
+    current_year = current_utc_year()
+    if year < MIN_YEAR or year > current_year:
+        raise argparse.ArgumentTypeError(
+            f"year must be between {MIN_YEAR} and {current_year}"
+        )
+    return year
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
