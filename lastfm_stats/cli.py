@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .api import LastFmClient, LastFmError, track_timestamp
+from .env import merge_dotenv
 from .stats import aggregate_by_month, month_names
 
 MIN_YEAR = 2002
@@ -171,7 +172,7 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    env = os.environ if environ is None else environ
+    env = merge_dotenv(os.environ) if environ is None else environ
 
     try:
         username, api_key = load_config(args, env)
