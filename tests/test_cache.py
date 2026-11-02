@@ -118,3 +118,35 @@ def test_without_cache_dir_nothing_is_written(monkeypatch, tmp_path):
 
     assert len(FakeClient.calls) == 2
     assert list(tmp_path.iterdir()) == []
+
+
+def test_in_memory_cache_drops_invalid_entries():
+    cache = MonthCache.from_months(
+        {
+            "2024-01": 5,
+            "2024-13": 1,
+            "January": 1,
+            "2024-02": -1,
+            "2024-03": "7",
+            "2024-04": True,
+        }
+    )
+
+    assert cache.path is None
+    assert cache.as_dict() == {"2024-01": 5}
+    assert MonthCache.from_months(None).as_dict() == {}
+
+
+def test_in_memory_cache_tracks_changes_without_writing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cache = MonthCache.from_months({"2024-01": 5})
+
+    cache.put(2024, 1, 5)
+    assert not cache.dirty
+
+    cache.put(2024, 2, 3)
+    assert cache.dirty
+    cache.save()
+
+    assert cache.as_dict() == {"2024-01": 5, "2024-02": 3}
+    assert list(tmp_path.iterdir()) == []

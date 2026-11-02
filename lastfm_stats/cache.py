@@ -6,12 +6,14 @@ import re
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 CACHE_VERSION = 1
 CACHE_DIR_ENV = "LASTFM_STATS_CACHE_DIR"
 # Last.fm accepts scrobbles timestamped up to two weeks in the past, so a month
 # can still change shortly after it ends. Only months older than this are cached.
 SETTLE_PERIOD = timedelta(days=14)
+_KEY_PATTERN = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 
 
 def default_cache_dir(environ: Mapping[str, str]) -> Path:
@@ -42,9 +44,30 @@ class MonthCache:
     """Per-user JSON store of finalized monthly play counts."""
 
     def __init__(self, directory: Path, username: str, *, load: bool = True) -> None:
-        self.path = Path(directory) / f"{_safe_name(username)}.json"
+        self.path: Path | None = Path(directory) / f"{_safe_name(username)}.json"
         self._months: dict[str, int] = self._read() if load else {}
         self._dirty = False
+
+    @classmethod
+    def from_months(cls, months: Any) -> MonthCache:
+        """Build a cache that lives only in memory.
+
+        The caller persists it, e.g. Home Assistant through its own storage.
+        Invalid entries are dropped just like when reading the cache file.
+        """
+        cache = cls.__new__(cls)
+        cache.path = None
+        cache._months = _valid_months(months)
+        cache._dirty = False
+        return cache
+
+    @property
+    def dirty(self) -> bool:
+        """Whether counts changed since loading or the last save."""
+        return self._dirty
+
+    def as_dict(self) -> dict[str, int]:
+        return dict(sorted(self._months.items()))
 
     def get(self, year: int, month: int) -> int | None:
         return self._months.get(_key(year, month))
@@ -56,10 +79,10 @@ class MonthCache:
             self._dirty = True
 
     def save(self) -> None:
-        if not self._dirty:
+        if not self._dirty or self.path is None:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = {"version": CACHE_VERSION, "months": dict(sorted(self._months.items()))}
+        data = {"version": CACHE_VERSION, "months": self.as_dict()}
         tmp_path = self.path.with_suffix(".tmp")
         tmp_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         os.replace(tmp_path, self.path)
@@ -72,14 +95,21 @@ class MonthCache:
             return {}
         if not isinstance(data, dict) or data.get("version") != CACHE_VERSION:
             return {}
-        months = data.get("months")
-        if not isinstance(months, dict):
-            return {}
-        return {
-            key: value
-            for key, value in months.items()
-            if isinstance(key, str) and isinstance(value, int) and value >= 0
-        }
+        return _valid_months(data.get("months"))
+
+
+def _valid_months(months: Any) -> dict[str, int]:
+    if not isinstance(months, dict):
+        return {}
+    return {
+        key: value
+        for key, value in months.items()
+        if isinstance(key, str)
+        and _KEY_PATTERN.fullmatch(key)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+    }
 
 
 def _key(year: int, month: int) -> str:
