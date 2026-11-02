@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Last.fm Stats",
+        "description": "Zählt deine Last.fm-Scrobbles pro Monat des laufenden Jahres. Einen API-Key erstellst du unter https://www.last.fm/api/account/create.",
+        "data": {
+          "username": "Benutzername",
+          "api_key": "API-Key"
+        },
+        "data_description": {
+          "username": "Dein Last.fm-Benutzername.",
+          "api_key": "32 kleingeschriebene Hexadezimalzeichen. Dein Passwort wird nicht benötigt."
+        }
+      },
+      "reauth_confirm": {
+        "title": "API-Key aktualisieren",
+        "description": "Last.fm hat den API-Key für {username} abgelehnt. Gib einen gültigen Key ein.",
+        "data": {
+          "api_key": "API-Key"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Ungültiger API-Key.",
+      "user_not_found": "Last.fm-Benutzer nicht gefunden.",
+      "cannot_connect": "Last.fm ist nicht erreichbar.",
+      "unknown": "Unerwarteter Fehler."
+    },
+    "abort": {
+      "already_configured": "Dieser Last.fm-Benutzer ist bereits eingerichtet.",
+      "reauth_successful": "Der API-Key wurde aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Last.fm Stats",
+        "data": {
+          "scan_interval": "Aktualisierungsintervall (Minuten)"
+        },
+        "data_description": {
+          "scan_interval": "15 bis 1440 Minuten. Jede Aktualisierung kostet etwa drei Last.fm-Abfragen."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "year_scrobbles": {
+        "name": "Scrobbles dieses Jahr"
+      },
+      "total_scrobbles": {
+        "name": "Scrobbles gesamt"
+      },
+      "month_01": {
+        "name": "Scrobbles Januar"
+      },
+      "month_02": {
+        "name": "Scrobbles Februar"
+      },
+      "month_03": {
+        "name": "Scrobbles März"
+      },
+      "month_04": {
+        "name": "Scrobbles April"
+      },
+      "month_05": {
+        "name": "Scrobbles Mai"
+      },
+      "month_06": {
+        "name": "Scrobbles Juni"
+      },
+      "month_07": {
+        "name": "Scrobbles Juli"
+      },
+      "month_08": {
+        "name": "Scrobbles August"
+      },
+      "month_09": {
+        "name": "Scrobbles September"
+      },
+      "month_10": {
+        "name": "Scrobbles Oktober"
+      },
+      "month_11": {
+        "name": "Scrobbles November"
+      },
+      "month_12": {
+        "name": "Scrobbles Dezember"
+      }
+    }
+  }
+}
