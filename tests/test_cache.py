@@ -10,7 +10,7 @@ def utc(year, month, day=15, hour=12):
 
 
 class FakeClient:
-    """Stands in for LastFmClient and records getRecentTracks ranges."""
+    """Stands in for LastFmClient and records counted ranges."""
 
     timestamps: list[int] = []
     calls: list[tuple[int, int]] = []
@@ -21,11 +21,9 @@ class FakeClient:
     def get_user_info(self):
         return {"username": "RJ", "playcount": 1000}
 
-    def iter_recent_tracks(self, from_ts, to_ts, *, progress=None):
+    def count_scrobbles(self, from_ts, to_ts):
         FakeClient.calls.append((from_ts, to_ts))
-        for ts in FakeClient.timestamps:
-            if from_ts <= ts <= to_ts:
-                yield {"date": {"uts": str(ts)}}
+        return sum(1 for ts in FakeClient.timestamps if from_ts <= ts < to_ts)
 
 
 def use_fake_client(monkeypatch, timestamps):
@@ -72,7 +70,7 @@ def test_past_year_is_fetched_once_then_served_from_cache(monkeypatch, tmp_path)
     assert first == second
     _, counts, year_plays = second
     assert counts[1] == 2 and counts[12] == 1 and year_plays == 3
-    assert len(FakeClient.calls) == 1
+    assert len(FakeClient.calls) == 12
     data = json.loads((tmp_path / "rj.json").read_text(encoding="utf-8"))
     assert len(data["months"]) == 12
 
@@ -87,7 +85,7 @@ def test_refresh_refetches_cached_year(monkeypatch, tmp_path):
     )
 
     assert counts[2] == 1
-    assert len(FakeClient.calls) == 2
+    assert len(FakeClient.calls) == 24
 
 
 def test_current_year_only_fetches_unsettled_months(monkeypatch, tmp_path):
@@ -102,12 +100,16 @@ def test_current_year_only_fetches_unsettled_months(monkeypatch, tmp_path):
 
     _, counts, _ = cli.collect_stats("rj", "key", year, show_progress=False, cache_dir=tmp_path)
 
-    first_unsettled = next(
-        month for month in range(1, 13) if not is_month_final(year, month, now)
-    )
-    (from_ts, _), = FakeClient.calls
-    assert from_ts == int(datetime(year, first_unsettled, 1, tzinfo=timezone.utc).timestamp())
-    assert all(counts[month] == 7 for month in range(1, first_unsettled))
+    unsettled = [
+        month
+        for month in range(1, now.month + 1)
+        if not is_month_final(year, month, now)
+    ]
+    assert [from_ts for from_ts, _ in FakeClient.calls] == [
+        int(datetime(year, month, 1, tzinfo=timezone.utc).timestamp())
+        for month in unsettled
+    ]
+    assert all(counts[month] == 7 for month in range(1, unsettled[0]))
 
 
 def test_without_cache_dir_nothing_is_written(monkeypatch, tmp_path):
@@ -116,7 +118,7 @@ def test_without_cache_dir_nothing_is_written(monkeypatch, tmp_path):
     cli.collect_stats("rj", "key", 2024, show_progress=False)
     cli.collect_stats("rj", "key", 2024, show_progress=False)
 
-    assert len(FakeClient.calls) == 2
+    assert len(FakeClient.calls) == 24
     assert list(tmp_path.iterdir()) == []
 
 
