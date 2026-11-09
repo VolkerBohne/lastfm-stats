@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.lastfm_stats.const import DOMAIN, STORAGE_VERSION
@@ -57,8 +58,9 @@ async def test_update_with_filled_store_costs_three_requests(
     assert config_entry.runtime_data.data.year_plays == 9 * 7 + 2
 
     lastfm.requests.clear()
-    freezer.tick(timedelta(minutes=61))
-    async_fire_time_changed(hass)
+    # The coordinator schedules on the event loop clock, which freezer.tick does
+    # not move; passing the target time fires the timer.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=61))
     await hass.async_block_till_done()
 
     assert lastfm.requests == ["user.getInfo", "count", "count"]
