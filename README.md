@@ -192,13 +192,18 @@ type: custom:apexcharts-card
 header:
   show: true
   title: Scrobbles per month
-  show_states: true
+  # With a data_generator the header would show the last bar (December),
+  # not the yearly total; the entities card below shows the total.
+  show_states: false
 graph_span: 1y
 span:
   start: year
 yaxis:
   - min: 0
-    decimals: 0
+    apex_config:
+      labels:
+        formatter: |
+          EVAL:(value) => Math.round(value)
 series:
   - entity: sensor.lastfm_rj_year_scrobbles
     name: Scrobbles
