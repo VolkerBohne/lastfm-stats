@@ -8,7 +8,7 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/VolkerBohne/lastfm-stats/issues",
   "requirements": [
-    "lastfm-stats @ https://github.com/VolkerBohne/lastfm-stats/archive/refs/tags/v0.2.0.zip"
+    "lastfm-stats @ https://github.com/VolkerBohne/lastfm-stats/archive/refs/tags/v0.2.1.zip"
   ],
-  "version": "0.2.0"
+  "version": "0.2.1"
 }

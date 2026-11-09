@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lastfm-stats"
-version = "0.2.0"
+version = "0.2.1"
 description = "Show Last.fm listening stats: all-time plays and plays by month."
 readme = "README.md"
 requires-python = ">=3.10"
