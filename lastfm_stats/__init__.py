@@ -14,4 +14,4 @@ __all__ = [
     "collect_year_stats",
     "track_timestamp",
 ]
-__version__ = "0.2.0"
+__version__ = "0.2.1"
