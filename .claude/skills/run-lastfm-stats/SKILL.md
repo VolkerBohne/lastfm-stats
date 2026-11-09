@@ -138,6 +138,11 @@ instance at http://127.0.0.1:8123 (login `driver` / `driver-password` once
 - **Don't `pkill -f "hass -c ..."`** - the pattern matches the agent's own
   shell command line and kills it (exit 144). The driver stops HA via
   `/tmp/lastfm-stats-ha/driver.pid`.
+- **HA tests: `freezer.tick()` does not fire coordinator timers.** They run on
+  the event-loop clock; use `async_fire_time_changed(hass, dt_util.utcnow() +
+  delta)` (see `tests_ha/test_init.py`). With `freezer.tick` plus a bare
+  `async_fire_time_changed(hass)` the test passed or failed depending on the
+  installed HA packages.
 - **Moving the repo breaks the venvs**: script shebangs and the editable
   install keep the old path. Re-run `setup.sh` after deleting `.venv`/`.venv-ha`.
 - `page error: Transition was skipped. New ViewTransition started` in the
